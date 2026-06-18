@@ -1,9 +1,7 @@
 from src.DesktopBuddy import DesktopBuddy
-from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, list_processes, PomodoroTimer, PlaySpotifyPlaylist, ShowMessage
-from functools import partial
+from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, list_processes, PomodoroTimer, PlaySpotify, ShowMessage, ChangeState
 from smolagents import ToolCallingAgent, LiteLLMModel
 import os
-
 
 if __name__ == "__main__":
     buddy_instance = DesktopBuddy()  
@@ -16,7 +14,7 @@ if __name__ == "__main__":
     )
 
     agent = ToolCallingAgent(
-        tools=[PlaySpotifyPlaylist(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), list_processes, PomodoroTimer(buddy_instance)],
+        tools=[PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), list_processes, PomodoroTimer(buddy_instance), ChangeState(buddy_instance)],
         max_steps = 5,
         model=local_model
     )

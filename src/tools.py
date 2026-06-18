@@ -9,7 +9,8 @@ import psutil
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import subprocess
-from src.DesktopBuddy import BuddyStates, DesktopBuddy
+from src.DesktopBuddy import DesktopBuddy
+from src.StateManager import BuddyStateManager, AudioState, RoutineState, UIState
 import pygetwindow as gw
 
 load_dotenv()
@@ -48,6 +49,7 @@ class ShowMessage(Tool):
         
         # Dispara a renderização na thread principal com segurança
         self.buddy.window.after(0, lambda: self.buddy.display_agent_message(message))
+        self.buddy.sprite_queue.put(UIState.SHOWING)
         
         return "Success: Message displayed to the user."
 
@@ -87,26 +89,36 @@ def kill_process(pid: int) -> bool:
         print(f"Failed to terminate process {pid}: {e}")
         return False
 
-class PlaySpotifyPlaylist(Tool):
-    name = "play_spotify_playlist"
-    description = "Abre o Spotify e inicia a reprodução de uma playlist específica. Args: playlist_id (str): O ID da playlist do Spotify."
+class PlaySpotify(Tool):
+    name = "play_spotify_playlist_or_track"
+    description = "Abre o Spotify e inicia a reprodução de uma playlist ou música específica. Args: playlist_or_track_id (str): O ID da playlist do Spotify; call_type (integer): Identificador de o que será tocado. Envie 0 para tocar playlists e 1 para tocar músicas."
     inputs = {
-        "playlist_id": {"type": "string", "description": "O ID da playlist do Spotify."}
+        "playlist_or_track_id": {"type": "string", "description": "O ID da playlist do Spotify."},
+        "call_type": {"type": "integer", "description": "Identificador de o que será tocado. Envie 0 para tocar playlists e 1 para tocar músicas."}
     }
-    output_type = "null"
+    output_type = "string"
 
     def __init__(self, buddy: DesktopBuddy):
         super().__init__()
         self.buddy = buddy
 
-    def forward(self, playlist_id: str) -> None:
+    def forward(self, playlist_or_track_id: str, call_type: int) -> None:
+        if not playlist_or_track_id or len(playlist_or_track_id.strip()) == 0:
+            return "Error: playlist_or_track_id cannot be empty. You must provide a valid Spotify Link ID string. If you don't know the ID, tell the user you don't have it."
+        
         # Força a abertura do Spotify
         subprocess.Popen(['spotify'])
 
         # Configurações de autenticação do Spotify
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+            client_id=os.getenv('SPOTIPY_CLIENT_ID'),
+            client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
+            redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
+            scope='user-modify-playback-state, user-read-playback-state'
+        ))
 
         tries = 0
+        device_id = None
         while True:
             try:
                 device_id = [d['id'] for d in sp.devices()['devices'] if d['type'] == 'Computer'][0]
@@ -119,23 +131,50 @@ class PlaySpotifyPlaylist(Tool):
                 break
             except (KeyError, IndexError):
                 if tries >= 5:
-                    print("Failed to connect to Spotify after multiple attempts.")
+                    print("Error: Failed to connect to Spotify after multiple attempts.")
                     return
                 print("Spotify not ready yet, retrying...")
                 tries += 1
                 sleep(5)
                 continue
 
+        is_track = False
+        try:
+            sp.track(playlist_or_track_id)
+            is_track = True
+        except Exception:
+            is_track = False
+
         # Abre a playlist
         current_play = sp.current_playback()
-        if current_play['context'] is None or current_play['context']['uri'] != f"spotify:playlist:{playlist_id}":
-            play = sp.start_playback(context_uri=f"https://open.spotify.com/playlist/{playlist_id}")
-            self.buddy.sprite_queue.put("MUSIC")
-            print(f"Started playing Spotify playlist: {playlist_id}")
-            return "Success: The playlist is now playing on Spotify."
+        if current_play['context'] is None or current_play['context']['uri'] != f"spotify:playlist:{playlist_or_track_id}" or current_play['context']['uris'][0] != f"spotify:track:{playlist_or_track_id}":
+            try:
+                match call_type:
+                    case 0:
+                        if is_track == True:
+                            return "This id is a track not a playlist"
+                        sp.start_playback(device_id=device_id, context_uri=f"spotify:playlist:{playlist_or_track_id}")
+                    case 1:
+                        if is_track == False:
+                            return "This id is a playlist not a track"
+                        sp.start_playback(device_id=device_id, uris=[f"spotify:track:{playlist_or_track_id}"])
+                    case _:
+                        return "Error: call_type provided is invalid. Use 0 for playlists and 1 for single tracks."
+                    
+                sleep(1.5)
+                playback = sp.current_playback()
+                
+                if playback is None or not playback.get('is_playing', False):
+                    return "Error: Playback command sent, but music is not active. Spotify may be paused or stuck. Please try again."
+                
+                self.buddy.sprite_queue.put(AudioState.MUSIC)
+                print(f"Started playing Spotify: {playlist_or_track_id}")
+                return f"Success: The {'playlist' if call_type == 0 else 'track'} is now actively playing on Spotify."
+            except Exception as e:
+                return f"Error controlling Spotify playback: {str(e)}. Check if your account has Premium active (required for SDK integration)."
         else:
-            self.buddy.sprite_queue.put("MUSIC")
-            print("Spotify is already playing the desired playlist.")
+            self.buddy.sprite_queue.put(AudioState.MUSIC)
+            print("Spotify is already playing the desired playlist or track.")
             return "Success: The playlist is now playing on Spotify."
 
 class PauseSpotify(Tool):
@@ -151,7 +190,7 @@ class PauseSpotify(Tool):
     def forward(self) -> None:
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
         sp.pause_playback()
-        self.buddy.sprite_queue.put("last")
+        self.buddy.sprite_queue.put(AudioState.SILENT)
         print("Spotify playback paused.")
         return "Success: Spotify playback paused."
 
@@ -168,14 +207,15 @@ class ResumeSpotify(Tool):
     def forward(self) -> None:
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
         sp.start_playback()
-        self.buddy.sprite_queue.put("MUSIC")
+        self.buddy.sprite_queue.put(AudioState.MUSIC)
         print("Spotify playback resumed.")
         return "Success: Spotify playback resumed."
 
 
 class PomodoroTimer(Tool):
     name = "start_pomodoro_timer"
-    description = """Inicia um timer de Pomodoro.
+    description = """
+    Inicia um timer de Pomodoro.
     Args:
         work_duration (int): Duração do período de trabalho em minutos.
         break_duration (int): Duração do período de descanso em minutos.
@@ -196,8 +236,34 @@ class PomodoroTimer(Tool):
     def forward(self, work_duration: int = 25, break_duration: int = 5, loops: int = 4) -> None:
         print(f"Starting Pomodoro timer: {work_duration} minutes of work followed by {break_duration} minutes of break.")
         self.buddy.is_pomodoro_active = True
-        self.buddy.state = BuddyStates.WORKING
         self.buddy.pomodoro_loops = loops
         self.buddy.time_left = work_duration * 60
         self.buddy.work_duration = work_duration
         self.buddy.break_duration = break_duration
+
+        self.buddy.sprite_queue.put(RoutineState.WORKING)
+
+class ChangeState(Tool):
+    name = "change_buddy_state"
+    description = """
+    Muda o estado de rotina do Buddy, podendo ser 'IDLE'(0) ou 'WORKING'(1).
+    Args:
+        id_state (int): Identificação do estado.
+    """
+    inputs = {"id_state" : {"type": "integer", "description": "Identificação do estado. 'IDLE'(0) ou 'WORKING'(1)"}} 
+    output_type = "string"
+
+    def __init__(self, buddy: DesktopBuddy):
+        super().__init__()
+        self.buddy = buddy
+    
+    def forward(self, id_state: int):
+        match id_state:
+            case 0:
+                self.buddy.sprite_queue.put(RoutineState.IDLE)
+                return "Estado alterado para 'IDLE' (0)"
+            case 1:
+                self.buddy.sprite_queue.put(RoutineState.WORKING)
+                return "Estado alterado para 'WORKING' (1)"
+            case _:
+                return "ID inválido"
