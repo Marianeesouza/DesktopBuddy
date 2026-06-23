@@ -106,10 +106,9 @@ class PlaySpotify(Tool):
         if not playlist_or_track_id or len(playlist_or_track_id.strip()) == 0:
             return "Error: playlist_or_track_id cannot be empty. You must provide a valid Spotify Link ID string. If you don't know the ID, tell the user you don't have it."
         
-        # Força a abertura do Spotify
         subprocess.Popen(['spotify'])
 
-        # Configurações de autenticação do Spotify
+        # Spotify auth config
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
             client_id=os.getenv('SPOTIPY_CLIENT_ID'),
             client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
@@ -251,3 +250,23 @@ class WorkModeManager(Tool):
                     return f"Modo Pomodoro iniciado com sucesso!"
             case _:
                 return "Error: ID inválido. Use 0 para parar ou 1 para iniciar o modo de trabalho."
+            
+class TrelloTaskViewer(Tool):
+    name = "trello_task_viewer"
+    description = "Abre uma interface visual integrada no Buddy para exibir os cards de tasks incompletas organizados por listas do Trello."
+    inputs = {
+        "message": {
+            "type": "string",
+            "description": "A mensagem ou introdução que o Buddy vai falar no topo do painel (ex: 'Aqui estão suas tarefas de hoje!').",
+            "nullable": True
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, buddy):
+        super().__init__()
+        self.buddy = buddy
+    
+    def forward(self, message="Aqui estão suas atividades pendentes:"):
+        self.buddy.window.after(0, lambda: self.buddy.open_trello_dashboard(message))
+        return "Painel do Trello aberto com a mensagem do agente."

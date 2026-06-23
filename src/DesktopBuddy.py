@@ -6,6 +6,7 @@ from PIL import Image, ImageTk
 import queue
 import json
 import os
+from trello import TrelloClient
 
 def load_sprites_config():
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +25,13 @@ class DesktopBuddy:
         self.SPRITES = load_sprites_config()
         self.agent = None  
         self.sprite_queue = queue.Queue()
+
+        self.trello_client = TrelloClient(
+        api_key=os.getenv('TRELLO_API_KEY'),
+        api_secret=os.getenv('TRELLO_API_SECRET'),
+        token=os.getenv('TRELLO_TOKEN')
+    )
+        self.trello_board = self.trello_client.get_board(os.getenv('TRELLO_BOARD_ID'))
 
         # UI configs
         self._init_window()
@@ -102,6 +110,9 @@ class DesktopBuddy:
         self.break_duration = 0
     
     def run(self):
+        command = "Use 'trello_task_viewer' para mostrar as atividades a serem feitas perguntando 'O que vamos fazer hoje?'"
+        self.window.after(100, lambda: self.send_command(command))
+
         self.window.mainloop()
 
     def update_sprite_visual(self):
@@ -149,24 +160,37 @@ class DesktopBuddy:
 
     def release_click(self, event):
         if not self.is_dragging:
-            self.curr_x = self.window.winfo_x()
-            self.curr_y = self.window.winfo_y()
+            curr_x = self.window.winfo_x()
+            curr_y = self.window.winfo_y()
 
             if self.state_manager.ui_state == UIState.SHOWING:
                 if hasattr(self, '_message_auto_close_id'):
                     self.window.after_cancel(self._message_auto_close_id)
+                
+                if hasattr(self, 'trello_frame') and self.trello_frame:
+                    self.trello_frame.pack_forget()
+                    self.trello_frame.destroy()
+                    self.trello_frame = None
+                    
+                    new_y = curr_y + 180
 
-                if self.msg_label.winfo_manager() == "place":
+                    self.state_manager.ui_state = UIState.REST
+                    self.update_sprite_visual()
+
+                    self.window.geometry(f"{self.window_width}x{self.window_height}+{curr_x}+{new_y}")
+
+                elif self.msg_label.winfo_manager() == "place":
                     self.close_agent_message()
                 else:
                     self.command_entry.place_forget()
                     self.state_manager.ui_state = UIState.REST
                     self.update_sprite_visual()
-                    self.window.geometry(f"{self.window_width}x{self.window_height}+{self.curr_x}+{self.curr_y}")
+                    new_y = curr_y + 5
+                    self.window.geometry(f"{self.window_width}x{self.window_height}+{curr_x}+{new_y}")
             else:
                 self.state_manager.ui_state = UIState.SHOWING
                 self.update_sprite_visual()
-                self.window.geometry(f"{self.window_width}x{self.window_height + 30}+{self.curr_x}+{self.curr_y}")
+                self.window.geometry(f"{self.window_width}x{self.window_height + 30}+{curr_x}+{curr_y}")
                 self.on_pure_click()
         
         self.is_dragging = False
@@ -181,6 +205,12 @@ class DesktopBuddy:
 
     def on_pure_click(self):
         self.command_entry.place(x=0, y=0, relwidth=1, height=25)
+
+        current_x = self.window.winfo_x()
+        current_y = self.window.winfo_y()
+        new_y = current_y - 5
+        self.window.geometry(f"{self.window_width}x{self.window_height}+{current_x}+{new_y}")
+
         self.command_entry.delete(0, tk.END)
         self.command_entry.focus_set()
 
@@ -231,9 +261,9 @@ class DesktopBuddy:
             self.state_manager.ui_state = UIState.REST
             self.update_sprite_visual()
     
-    def process_ai_response(self, comando: str):
+    def process_ai_response(self, command: str):
         try:
-            resposta = self.agent.run(comando)
+            resposta = self.agent.run(command)
             print(f"\n[AI Response]: {resposta}")
 
         except Exception as e:
@@ -291,14 +321,17 @@ class DesktopBuddy:
         next_check = check_interval
         loops_passed = 1
 
+        command = "Caso o pomodoro tenha sido ativado no pedido de início de loop de trabalho, toque essa playlist 'https://open.spotify.com/playlist/59OrkYvGv0oM1KgPABU7nw?si=e3706b60c0384e5b'"
+        self.window.after(0, lambda: self.send_command(command))
+
         while self.work_thread_active:
             time.sleep(1)
             seconds_counter+=1
 
             if (seconds_counter >= next_check and (self.pomodoro_loops == 0 or (self.pomodoro_loops != 0 and self.state_manager.routine_state == RoutineState.WORKING))):
                 next_check += check_interval
-                comando = "Analise a janela que está ativa no momento. Verifique o conteúdo da janela e avise o usuário caso essa janela não pareça útil para trabalho ou estudos. Use seu próprio julgamento para definir isto. Mostre uma mensagem para o usuário utilizando a ferramenta 'work_mode_manager' apenas se a janela ativa não parecer útil e peça para que ele volte ao trabalho."
-                self.window.after(0, lambda: self.send_command(comando))
+                command = "Analise a janela que está ativa no momento. Verifique o conteúdo da janela e avise o usuário caso essa janela não pareça útil para trabalho ou estudos. Use seu próprio julgamento para definir isto. Mostre uma mensagem para o usuário utilizando a ferramenta 'work_mode_manager' apenas se a janela ativa não parecer útil e peça para que ele volte ao trabalho."
+                self.window.after(0, lambda: self.send_command(command))
 
             if self.pomodoro_loops == 0:
                 continue
@@ -307,12 +340,18 @@ class DesktopBuddy:
                 if (self.state_manager.routine_state == RoutineState.WORKING):
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * (loops_passed - 1)
 
+                    command = "Caso a música não esteja tocando no spotify no momento, volte a tocar a música"
+                    self.window.after(0, lambda: self.send_command(command))
+
                     if (seconds_counter >= current_time_limit):
                         self.state_manager.routine_state=RoutineState.BREAK
                         self.window.after(0, self.update_sprite_visual)
 
                 elif (self.state_manager.routine_state == RoutineState.BREAK):
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * loops_passed
+
+                    command = "Caso a música esteja tocando no spotify no momento, pause a música"
+                    self.window.after(0, lambda: self.send_command(command))
 
                     if (seconds_counter >= current_time_limit):
                         if self.pomodoro_loops > 0 and loops_passed >= self.pomodoro_loops:
@@ -337,5 +376,93 @@ class DesktopBuddy:
         self._init_working_attributes() #Makes thread loop stop
         self.state_manager.routine_state = RoutineState.IDLE
         self.update_sprite_visual()
-
     
+    def open_trello_dashboard(self, message_text):
+        self.state_manager.ui_state = UIState.SHOWING
+        self.update_sprite_visual()
+        self.current_trello_message = message_text
+
+        current_x = self.window.winfo_x()
+        current_y = self.window.winfo_y()
+        new_y = current_y - 180
+
+        trello_frame_height = 180
+        self.window.geometry(f"{self.window_width}x{self.window_height+trello_frame_height}+{current_x}+{new_y}")
+
+        self.trello_frame = tk.Frame(self.window, bg="#f0f0f0", bd=1, relief="solid")
+        self.trello_frame.pack(side="top", fill="x", padx=10, pady=5, before=self.label)
+        self.trello_frame.pack_propagate(False)
+        self.trello_frame.config(height=trello_frame_height)
+
+        self.canvas = tk.Canvas(self.trello_frame, bg="#f0f0f0", highlightthickness=0)
+        self.scrollbar = tk.Scrollbar(self.trello_frame, orient="vertical", command=self.canvas.yview)
+        
+        self.scrollable_frame = tk.Frame(self.canvas, bg="#f0f0f0")
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw", width=self.window_width-30)
+
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        self.show_trello_lists_screen()
+
+    def show_trello_lists_screen(self):
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+
+        lbl_buddy_msg = tk.Label(
+            self.scrollable_frame, 
+            text=f"💬 {self.current_trello_message}", 
+            font=("Arial", 9, "italic"), 
+            bg="#e0e0e0", 
+            fg="#333333",
+            wraplength=self.window_width-40,
+            justify="left",
+            pady=4
+        )
+        lbl_buddy_msg.pack(fill="x", padx=5, pady=5)
+        
+        div = tk.Frame(self.scrollable_frame, height=1, bg="#cccccc")
+        div.pack(fill="x", padx=5, pady=2)
+
+        lists = self.trello_board.all_lists()
+        for lst in lists:
+            cards = lst.list_cards(card_filter='open')
+            incomplete_cards = [c for c in cards if not c.is_due_complete]
+            if incomplete_cards:
+                lbl = tk.Label(self.scrollable_frame, text=lst.name, font=("Arial", 9, "bold"), bg="#f0f0f0")
+                lbl.pack(anchor="w", padx=5, pady=2)
+
+                for card in incomplete_cards:
+                    btn = tk.Button(
+                        self.scrollable_frame,
+                        text=card.name, 
+                        font=("Arial", 9),
+                        command=lambda c=card: self.show_card_description_screen(c)
+                    )
+                    btn.pack(fill="x", padx=10, pady=1)
+    
+    def show_card_description_screen(self, card):
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        lbl_title = tk.Label(self.scrollable_frame, text=card.name, font=("Arial", 10, "bold"), bg="#f0f0f0", wraplength=self.window_width-40)
+        lbl_title.pack(pady=5)
+
+        btn_back = tk.Button(self.scrollable_frame, text="← Voltar", command=self.show_trello_lists_screen)
+        btn_back.pack(side="bottom", pady=5)
+
+        desc_text = card.description if card.description else "Sem descrição informada."
+        lbl_desc = tk.Label(self.scrollable_frame, text=desc_text, font=("Arial", 9), bg="#f0f0f0", wraplength=self.window_width-40, justify="left")
+        lbl_desc.pack(pady=5, padx=5, fill="both", expand=True)

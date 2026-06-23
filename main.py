@@ -1,6 +1,7 @@
 from src.DesktopBuddy import DesktopBuddy
-from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, list_processes, WorkModeManager, PlaySpotify, ShowMessage
+from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, list_processes, WorkModeManager, PlaySpotify, ShowMessage, TrelloTaskViewer
 from smolagents import ToolCallingAgent, LiteLLMModel
+import psutil
 import os
 
 if __name__ == "__main__":
@@ -14,7 +15,7 @@ if __name__ == "__main__":
     )
 
     agent = ToolCallingAgent(
-        tools=[PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), list_processes, WorkModeManager(buddy_instance)],
+        tools=[PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), list_processes, WorkModeManager(buddy_instance), TrelloTaskViewer(buddy_instance)],
         max_steps = 5,
         model=local_model
     )
@@ -28,7 +29,7 @@ if __name__ == "__main__":
     4. HONESTIDADE: Se você não souber como fazer algo, não há problema em dizer que não sabe, mas tente encontrar uma maneira de ajudar com as ferramentas que possui. Se precisar de mais informações, pergunte ao usuário de forma clara e concisa.
 
     REGRAS CRÍTICAS DE SINTAXE E FERRAMENTAS:
-    - JSON ESTRITO: Ao chamar ferramentas, você DEVE fornecer APENAS parâmetros JSON válidos que correspondam ao esquema (schema) da ferramenta. NÃO gere texto, chaves extras, trechos de código, tokens ou espaços em branco dentro dos argumentos da ferramenta. Seja extremamente conciso.
+    - JSON ESTRITO: Ao chamar ferramentas, você DEVE fornecer APENAS parâmetros JSON válidos que correspondam ao esquema (schema) da ferramenta. NÃO gere texto, chaves extras, trechos de código, tokens ou espaços em branco dentro dos argumentos da ferramenta. Seja extremamente conciso. Toda chamada de ferramenta PRECISA conter a chave 'name' e a chave 'arguments'.
     - NÃO INVENTE ARGUMENTOS: Se uma ferramenta possui um esquema de entrada vazio (como 'analyse_active_window'), seu campo de argumentos DEVE ser estritamente {}. Nunca injete o retorno/saída de uma ferramenta de volta em seus próprios parâmetros.
     - COMUNICAÇÃO COM O USUÁRIO: CRÍTICO! Para falar ou comunicar qualquer coisa ao usuário (incluindo sua resposta final, respostas, pensamentos ou comentários), você DEVE sempre usar a ferramenta 'show_message'. Não use saídas de texto comum para respostas finais.
 
