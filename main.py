@@ -1,5 +1,5 @@
 from src.DesktopBuddy import DesktopBuddy
-from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, list_processes, PomodoroTimer, PlaySpotify, ShowMessage, ChangeState
+from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, list_processes, WorkModeManager, PlaySpotify, ShowMessage
 from smolagents import ToolCallingAgent, LiteLLMModel
 import os
 
@@ -14,34 +14,34 @@ if __name__ == "__main__":
     )
 
     agent = ToolCallingAgent(
-        tools=[PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), list_processes, PomodoroTimer(buddy_instance), ChangeState(buddy_instance)],
+        tools=[PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), list_processes, WorkModeManager(buddy_instance)],
         max_steps = 5,
         model=local_model
     )
 
-    agent.prompt_templates["system_prompt"] = """You are Desktop Buddy, a helpful and friendly desktop assistant. You can perform various tasks on the user's computer using the tools at your disposal. Always prioritize the user's needs and provide the best, most polite, and friendly assistance possible.
+    agent.prompt_templates["system_prompt"] = """Você é o Desktop Buddy, um assistente de desktop prestativo e amigável. Você pode realizar várias tarefas no computador do usuário utilizando as ferramentas à sua disposição. Sempre priorize as necessidades do usuário e forneça a melhor assistência possível, de forma educada e amigável.
 
-    OPERATIONAL RULES:
-    1. MINIMUM STEPS: Always complete the requested task with the least amount of steps possible. Do not call unnecessary tools. 
-    2. SEQUENTIAL EXECUTION: If a task requires multiple steps, break them down and call the tools sequentially.
-    3. MAX STEPS LIMIT: If the maximum steps are reached before completion, simply say you can't respond to that request.
-    4. HONESTY: If you don't know how to do something, it's okay to say you don't know, but try to find a way to help with the tools you have. If you need more information, ask the user in a clear and concise way.
+    REGRAS OPERACIONAIS:
+    1. PASSOS MÍNIMOS: Sempre conclua a tarefa solicitada com a menor quantidade de passos possível. Não chame ferramentas desnecessárias. Evite chamar a mesma ferramenta várias vezes em sequência.
+    2. EXECUÇÃO SEQUENCIAL: Se uma tarefa exigir várias etapas, divida-as e chame as ferramentas de forma sequencial.
+    3. LIMITE MÁXIMO DE PASSOS: Se o limite máximo de passos for atingido antes da conclusão, simplesmente diga que não pode responder a essa solicitação.
+    4. HONESTIDADE: Se você não souber como fazer algo, não há problema em dizer que não sabe, mas tente encontrar uma maneira de ajudar com as ferramentas que possui. Se precisar de mais informações, pergunte ao usuário de forma clara e concisa.
 
-    CRITICAL SINTAX & TOOL RULES:
-    - STRICT JSON: When calling tools, you MUST ONLY provide valid JSON parameters that match the tool's schema. DO NOT generate text, extra brackets, code snippets, tokens, or whitespaces inside the tool arguments. Be extremely concise.
-    - NO ARGUMENT INVENTING: If a tool has an empty input schema (like 'analyse_active_window'), its arguments field MUST be strictly {}. Never inject the tool's output back into its parameters.
-    - USER COMMUNICATION: CRITICAL! For telling or communicating anything to the user (including your final response, answers, thoughts, or comments), you MUST always use the 'show_message' tool. Do not use regular text outputs for final answers.
+    REGRAS CRÍTICAS DE SINTAXE E FERRAMENTAS:
+    - JSON ESTRITO: Ao chamar ferramentas, você DEVE fornecer APENAS parâmetros JSON válidos que correspondam ao esquema (schema) da ferramenta. NÃO gere texto, chaves extras, trechos de código, tokens ou espaços em branco dentro dos argumentos da ferramenta. Seja extremamente conciso.
+    - NÃO INVENTE ARGUMENTOS: Se uma ferramenta possui um esquema de entrada vazio (como 'analyse_active_window'), seu campo de argumentos DEVE ser estritamente {}. Nunca injete o retorno/saída de uma ferramenta de volta em seus próprios parâmetros.
+    - COMUNICAÇÃO COM O USUÁRIO: CRÍTICO! Para falar ou comunicar qualquer coisa ao usuário (incluindo sua resposta final, respostas, pensamentos ou comentários), você DEVE sempre usar a ferramenta 'show_message'. Não use saídas de texto comum para respostas finais.
 
-    EXAMPLE OF A CORRECT FLOW:
-    User: "analise a minha janela ativa e me diga o que você vê"
-    Thought: I need to capture the active window title first.
-    Action: analyse_active_window with arguments {}
-    Observation: "main.py - DesktopBuddy - Visual Studio Code"
-    Thought: I have the information. Now I must tell the user what I found using the correct tool.
-    Action: show_message with arguments {"message": "Sua janela ativa é o Visual Studio Code, você está editando o arquivo main.py!"}
+    EXEMPLO DE UM FLUXO CORRETO:
+    Usuário: "analise a minha janela ativa e me diga se ela é útil"
+    Thought: Eu preciso capturar o título da janela ativa primeiro.
+    Action: analyse_active_window com os argumentos {}
+    Observation: "Vídeo de Gameplay - YouTube - Google Chrome"
+    Thought: Eu tenho a informação. Agora preciso dizer ao usuário o que encontrei usando a ferramenta correta.
+    Action: show_message com os argumentos {"message": "Você está vendo um vídeo de gameplay no Youtube. Isso não parece produtivo! Vamos voltar ao trabalho!"}
     Observation: "Success: Message displayed to the user."
-    Thought: Task completed.
-    Action: final_answer with arguments {"answer": "Task completed successfully."}
+    Thought: Tarefa concluída.
+    Action: final_answer com os argumentos {"answer": "Task completed successfully."}
     """
 
     buddy_instance.agent = agent

@@ -211,59 +211,43 @@ class ResumeSpotify(Tool):
         print("Spotify playback resumed.")
         return "Success: Spotify playback resumed."
 
-
-class PomodoroTimer(Tool):
-    name = "start_pomodoro_timer"
+class WorkModeManager(Tool):
+    name = "work_mode_manager"
     description = """
-    Inicia um timer de Pomodoro.
+    Muda o estado de rotina do Buddy para WORKING ou volta para o modo IDLE. Para iniciar essa ferramenta sem o uso do pomodoro, passe os parâmetros "pomodoro_work_time", "pomodoro_break_time" e "pomodoro_loops" como 0.
     Args:
-        work_duration (int): Duração do período de trabalho em minutos.
-        break_duration (int): Duração do período de descanso em minutos.
-        loops (int): Número de ciclos do Pomodoro.
+        id_state (int): Envie 1 para ativar o modo de trabalho (WORKING) ou 0 para desativar (IDLE).
+        pomodoro_work_time (int): Tempo de trabalho do pomodoro em segundos.
+        pomodoro_break_time (int): Tempo de intervalo do pomodoro em segundos.
+        pomodoro_loops (int): Quantidade de ciclos completos. Envie 0 para modo de foco infinito.
     """
     inputs = {
-        "work_duration": {"type": "integer", "description": "Duração do período de trabalho em minutos.", "nullable": True},
-        "break_duration": {"type": "integer", "description": "Duração do período de descanso em minutos.", "nullable": True},
-        "loops": {"type": "integer", "description": "Número de ciclos do Pomodoro.", "nullable": True}
-    }
-    
-    output_type = "null"
-
-    def __init__(self, buddy: DesktopBuddy):
-        super().__init__()
-        self.buddy = buddy
-
-    def forward(self, work_duration: int = 25, break_duration: int = 5, loops: int = 4) -> None:
-        print(f"Starting Pomodoro timer: {work_duration} minutes of work followed by {break_duration} minutes of break.")
-        self.buddy.is_pomodoro_active = True
-        self.buddy.pomodoro_loops = loops
-        self.buddy.time_left = work_duration * 60
-        self.buddy.work_duration = work_duration
-        self.buddy.break_duration = break_duration
-
-        self.buddy.sprite_queue.put(RoutineState.WORKING)
-
-class ChangeState(Tool):
-    name = "change_buddy_state"
-    description = """
-    Muda o estado de rotina do Buddy, podendo ser 'IDLE'(0) ou 'WORKING'(1).
-    Args:
-        id_state (int): Identificação do estado.
-    """
-    inputs = {"id_state" : {"type": "integer", "description": "Identificação do estado. 'IDLE'(0) ou 'WORKING'(1)"}} 
+        "id_state": {"type": "integer", "description": "Identificação do estado. 0 para IDLE, 1 para WORKING."},
+        "pomodoro_work_time": {"type": "integer", "description": "Tempo em minutos que durará o tempo de trabalho do ciclo pomodoro.", "nullable": True},
+        "pomodoro_break_time": {"type": "integer", "description": "Tempo em minutos que durará o tempo de intervalo do ciclo pomodoro.", "nullable": True},
+        "pomodoro_loops": {"type": "integer", "description": "Quantidade de loops (Work+Break) que vai durar o pomodoro. Envie 0 para não ativar o ciclo.", "nullable": True}
+    } 
     output_type = "string"
 
     def __init__(self, buddy: DesktopBuddy):
         super().__init__()
         self.buddy = buddy
     
-    def forward(self, id_state: int):
+    def forward(self, id_state: int, pomodoro_work_time: int = None, pomodoro_break_time: int = None, pomodoro_loops: int = None):
         match id_state:
             case 0:
-                self.buddy.sprite_queue.put(RoutineState.IDLE)
-                return "Estado alterado para 'IDLE' (0)"
+                self.buddy.stop_work_mode()
+                return "Modo de trabalho encerrado com sucesso."
             case 1:
-                self.buddy.sprite_queue.put(RoutineState.WORKING)
-                return "Estado alterado para 'WORKING' (1)"
+                if pomodoro_loops is None or pomodoro_break_time is None or pomodoro_work_time is None:
+                    return "AVISO: Você está chamando esta ferramenta 'work_mode_manager' com os parâmetros do pomodoro nulos. Você DEVE usar a ferramenta 'show_message' para perguntar ao usuário se o pomodoro deve ou não ser ativo. Em caso positivo, pergunte quais os tempos dos períodos de trabalho e intervalo em minutos."
+                self.buddy.work_duration = (pomodoro_work_time if pomodoro_work_time is not None else 0)*60
+                self.buddy.break_duration = (pomodoro_break_time if pomodoro_break_time is not None else 0)*60
+                self.buddy.pomodoro_loops = pomodoro_loops if pomodoro_loops is not None else 0
+                self.buddy.start_work_mode()
+                if pomodoro_loops == 0:
+                    return f"Modo de trabalho contínuo iniciado com sucesso."
+                else:
+                    return f"Modo Pomodoro iniciado com sucesso!"
             case _:
-                return "ID inválido"
+                return "Error: ID inválido. Use 0 para parar ou 1 para iniciar o modo de trabalho."
