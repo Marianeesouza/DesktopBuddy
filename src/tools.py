@@ -102,7 +102,7 @@ class PlaySpotify(Tool):
         super().__init__()
         self.buddy = buddy
 
-    def forward(self, playlist_or_track_id: str, call_type: int) -> None:
+    def forward(self, playlist_or_track_id: str, call_type: int) -> str:
         if not playlist_or_track_id or len(playlist_or_track_id.strip()) == 0:
             return "Error: playlist_or_track_id cannot be empty. You must provide a valid Spotify Link ID string. If you don't know the ID, tell the user you don't have it."
         
@@ -146,16 +146,28 @@ class PlaySpotify(Tool):
 
         # Abre a playlist
         current_play = sp.current_playback()
-        if current_play['context'] is None or current_play['context']['uri'] != f"spotify:playlist:{playlist_or_track_id}" or current_play['context']['uris'][0] != f"spotify:track:{playlist_or_track_id}":
+        already_playing = False
+        if current_play and current_play.get('is_playing'):
+            context = current_play.get('context')
+
+            if call_type == 0 and context:
+                # Verificando se a playlist desejada já está tocando
+                already_playing = context.get('uri') == f"spotify:playlist:{playlist_or_track_id}"
+            elif call_type == 1:
+                # Verificando se a faixa (item) atual é a mesma desejada
+                item = current_play.get('item')
+                already_playing = item and item.get('id') == playlist_or_track_id
+                
+        if not already_playing:
             try:
                 match call_type:
                     case 0:
-                        if is_track == True:
-                            return "This id is a track not a playlist"
+                        if is_track:
+                            return "Error: This ID belongs to a track, not a playlist."
                         sp.start_playback(device_id=device_id, context_uri=f"spotify:playlist:{playlist_or_track_id}")
                     case 1:
-                        if is_track == False:
-                            return "This id is a playlist not a track"
+                        if not is_track:
+                            return "Error: This ID belongs to a playlist, not a track."
                         sp.start_playback(device_id=device_id, uris=[f"spotify:track:{playlist_or_track_id}"])
                     case _:
                         return "Error: call_type provided is invalid. Use 0 for playlists and 1 for single tracks."
@@ -180,35 +192,46 @@ class PauseSpotify(Tool):
     name = "pause_spotify"
     description = "Pausa a reprodução do Spotify."
     inputs = {}
-    output_type = "null"
+    output_type = "string"
 
     def __init__(self, buddy: DesktopBuddy):
         super().__init__()
         self.buddy = buddy
 
-    def forward(self) -> None:
+    def forward(self) -> str:
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
-        sp.pause_playback()
-        self.buddy.sprite_queue.put(AudioState.SILENT)
-        print("Spotify playback paused.")
-        return "Success: Spotify playback paused."
+        try:
+            sp.pause_playback()
+            self.buddy.sprite_queue.put(AudioState.SILENT)
+            print("Spotify playback paused.")
+            return "Success: Spotify playback paused."
+        except spotipy.exceptions.SpotifyException as e:
+            if "Restriction violated" in str(e) or e.http_status == 403:
+                return "Success: Spotify is already paused."
+            return f"Error pausing Spotify: {str(e)}"
 
 class ResumeSpotify(Tool):
     name = "resume_spotify"
-    description = "Retoma a reprodução do Spotify."
+    description = "Retoma a reprodução do Spotify de onde ela foi pausada."
     inputs = {}
-    output_type = "null"
+    output_type = "string"
 
     def __init__(self, buddy: DesktopBuddy):
         super().__init__()
         self.buddy = buddy
 
-    def forward(self) -> None:
+    def forward(self) -> str:
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
-        sp.start_playback()
-        self.buddy.sprite_queue.put(AudioState.MUSIC)
-        print("Spotify playback resumed.")
-        return "Success: Spotify playback resumed."
+        try:
+            sp.start_playback()
+            self.buddy.sprite_queue.put(AudioState.MUSIC)
+            print("Spotify playback resumed.")
+            return "Success: Spotify playback resumed."
+        except spotipy.exceptions.SpotifyException as e:
+            if "Restriction violated" in str(e) or e.http_status == 403:
+                self.buddy.sprite_queue.put(AudioState.MUSIC)
+                return "Success: Spotify playback is already active and playing."
+            return f"Error resuming Spotify: {str(e)}"
 
 class WorkModeManager(Tool):
     name = "work_mode_manager"

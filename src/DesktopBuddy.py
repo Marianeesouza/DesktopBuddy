@@ -30,8 +30,9 @@ class DesktopBuddy:
         api_key=os.getenv('TRELLO_API_KEY'),
         api_secret=os.getenv('TRELLO_API_SECRET'),
         token=os.getenv('TRELLO_TOKEN')
-    )
+        )
         self.trello_board = self.trello_client.get_board(os.getenv('TRELLO_BOARD_ID'))
+        self.current_task = None
 
         # UI configs
         self._init_window()
@@ -159,6 +160,10 @@ class DesktopBuddy:
             self.window.geometry(f"+{self.curr_x}+{self.curr_y}")
 
     def release_click(self, event):
+        if self.state_manager.ui_state == UIState.THINKING:
+            print("Buddy está pensando... Cliques bloqueados!")
+            return
+        
         if not self.is_dragging:
             curr_x = self.window.winfo_x()
             curr_y = self.window.winfo_y()
@@ -168,6 +173,7 @@ class DesktopBuddy:
                     self.window.after_cancel(self._message_auto_close_id)
                 
                 if hasattr(self, 'trello_frame') and self.trello_frame:
+                    self.canvas.unbind_all("<MouseWheel>")
                     self.trello_frame.pack_forget()
                     self.trello_frame.destroy()
                     self.trello_frame = None
@@ -320,8 +326,9 @@ class DesktopBuddy:
         check_interval = 5*60
         next_check = check_interval
         loops_passed = 1
+        last_action = None
 
-        command = "Caso o pomodoro tenha sido ativado no pedido de início de loop de trabalho, toque essa playlist 'https://open.spotify.com/playlist/59OrkYvGv0oM1KgPABU7nw?si=e3706b60c0384e5b'"
+        command = "Caso o pomodoro tenha sido ativado no pedido de início de loop de trabalho, toque essa playlist 'https://open.spotify.com/playlist/59OrkYvGv0oM1KgPABU7nw'"
         self.window.after(0, lambda: self.send_command(command))
 
         while self.work_thread_active:
@@ -339,9 +346,11 @@ class DesktopBuddy:
             if (self.pomodoro_loops >= loops_passed):
                 if (self.state_manager.routine_state == RoutineState.WORKING):
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * (loops_passed - 1)
-
-                    command = "Caso a música não esteja tocando no spotify no momento, volte a tocar a música"
-                    self.window.after(0, lambda: self.send_command(command))
+                    
+                    if last_action != "play":
+                        command = "Caso a música não esteja tocando no spotify no momento, volte a tocar a música"
+                        self.window.after(0, lambda: self.send_command(command))
+                        last_action = "play"
 
                     if (seconds_counter >= current_time_limit):
                         self.state_manager.routine_state=RoutineState.BREAK
@@ -350,8 +359,10 @@ class DesktopBuddy:
                 elif (self.state_manager.routine_state == RoutineState.BREAK):
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * loops_passed
 
-                    command = "Caso a música esteja tocando no spotify no momento, pause a música"
-                    self.window.after(0, lambda: self.send_command(command))
+                    if last_action != "stop":
+                        command = "Caso a música esteja tocando no spotify no momento, pause a música"
+                        self.window.after(0, lambda: self.send_command(command))
+                        last_action = "pause"
 
                     if (seconds_counter >= current_time_limit):
                         if self.pomodoro_loops > 0 and loops_passed >= self.pomodoro_loops:
@@ -411,7 +422,8 @@ class DesktopBuddy:
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
-        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self.trello_frame.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", lambda ev: self.canvas.yview_scroll(int(-1*(ev.delta/120)), "units")))
+        self.trello_frame.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
         self.show_trello_lists_screen()
 
