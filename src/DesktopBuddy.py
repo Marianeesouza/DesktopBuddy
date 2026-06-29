@@ -328,8 +328,7 @@ class DesktopBuddy:
         loops_passed = 1
         last_action = None
 
-        command = "Caso o pomodoro tenha sido ativado no pedido de início de loop de trabalho, toque essa playlist 'https://open.spotify.com/playlist/59OrkYvGv0oM1KgPABU7nw'"
-        self.window.after(0, lambda: self.send_command(command))
+        self.send_command("Toque essa playlist 'https://open.spotify.com/playlist/59OrkYvGv0oM1KgPABU7nw'")
 
         while self.work_thread_active:
             time.sleep(1)
@@ -337,8 +336,7 @@ class DesktopBuddy:
 
             if (seconds_counter >= next_check and (self.pomodoro_loops == 0 or (self.pomodoro_loops != 0 and self.state_manager.routine_state == RoutineState.WORKING))):
                 next_check += check_interval
-                command = "Analise a janela que está ativa no momento. Verifique o conteúdo da janela e avise o usuário caso essa janela não pareça útil para trabalho ou estudos. Use seu próprio julgamento para definir isto. Mostre uma mensagem para o usuário utilizando a ferramenta 'work_mode_manager' apenas se a janela ativa não parecer útil e peça para que ele volte ao trabalho."
-                self.window.after(0, lambda: self.send_command(command))
+                self.send_command("Analise a janela que está ativa no momento. Verifique o conteúdo da janela e avise o usuário caso essa janela não pareça útil para trabalho ou estudos. Mostre uma mensagem para o usuário utilizando a ferramenta 'work_mode_manager' apenas se a janela ativa não parecer útil e peça para que ele volte ao trabalho. Caso a janela ativa pareça útil de alguma forma, não é necessário mostrar nada.")
 
             if self.pomodoro_loops == 0:
                 continue
@@ -348,8 +346,7 @@ class DesktopBuddy:
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * (loops_passed - 1)
                     
                     if last_action != "play":
-                        command = "Caso a música não esteja tocando no spotify no momento, volte a tocar a música"
-                        self.window.after(0, lambda: self.send_command(command))
+                        self.send_command("Volte a tocar a música")
                         last_action = "play"
 
                     if (seconds_counter >= current_time_limit):
@@ -360,13 +357,11 @@ class DesktopBuddy:
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * loops_passed
 
                     if last_action != "stop":
-                        command = "Caso a música esteja tocando no spotify no momento, pause a música"
-                        self.window.after(0, lambda: self.send_command(command))
+                        self.send_command("Caso a música esteja tocando no spotify no momento, pause a música")
                         last_action = "pause"
 
                     if (seconds_counter >= current_time_limit):
                         if self.pomodoro_loops > 0 and loops_passed >= self.pomodoro_loops:
-                            # Stops work mode if pomodoro ends
                             self.window.after(0, self.stop_work_mode)
                             break
 

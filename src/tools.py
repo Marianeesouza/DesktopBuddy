@@ -12,6 +12,7 @@ import subprocess
 from src.DesktopBuddy import DesktopBuddy
 from src.StateManager import BuddyStateManager, AudioState, RoutineState, UIState
 import pygetwindow as gw
+import webbrowser
 
 load_dotenv()
 
@@ -232,6 +233,36 @@ class ResumeSpotify(Tool):
                 self.buddy.sprite_queue.put(AudioState.MUSIC)
                 return "Success: Spotify playback is already active and playing."
             return f"Error resuming Spotify: {str(e)}"
+        
+class VerifySpotify(Tool):
+    name = "verify_spotify"
+    description = "Verifica se existe alguma música tocando no Spotify no momento. Retorna 0 se nenhuma música está tocando e 1 caso alguma música esteja tocando. Retorna None se o spotify estiver inativo."
+    inputs = {}
+    output_type = "integer"
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self) -> int:
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+            client_id=os.getenv('SPOTIPY_CLIENT_ID'),
+            client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
+            redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
+            scope='user-read-playback-state'
+        ))
+
+        try:
+            playback = sp.current_playback()
+
+            if playback is None:
+                return -1
+
+            is_playing = playback.get('is_playing', False)
+            return 1 if is_playing else 0
+
+        except Exception as e:
+            print(f"[VerifySpotify Tool Error]: {str(e)}")
+            return -1        
 
 class WorkModeManager(Tool):
     name = "work_mode_manager"
@@ -276,7 +307,7 @@ class WorkModeManager(Tool):
             
 class TrelloTaskViewer(Tool):
     name = "trello_task_viewer"
-    description = "Abre uma interface visual integrada no Buddy para exibir os cards de tasks incompletas organizados por listas do Trello."
+    description = "OBRIGATÓRIO usar esta ferramenta se o usuário pedir para mostrar, abrir ou ver o painel/interface de atividades/tasks do Trello. Ela aceita uma mensagem de introdução opcional."
     inputs = {
         "message": {
             "type": "string",
@@ -293,3 +324,89 @@ class TrelloTaskViewer(Tool):
     def forward(self, message="Aqui estão suas atividades pendentes:"):
         self.buddy.window.after(0, lambda: self.buddy.open_trello_dashboard(message))
         return "Painel do Trello aberto com a mensagem do agente."
+    
+class TrelloCardList(Tool):
+    name = "trello_card_list"
+    description = "OBRIGATÓRIO usar esta ferramenta primeiro se o usuário pedir para abrir, preparar ou trabalhar em qualquer task. Retorna uma lista contendo o Nome e o ID de todos os cards de tarefas pendentes no Trello."
+    inputs = {}
+    output_type = "string"
+
+    def __init__(self, buddy):
+        super().__init__()
+        self.buddy = buddy
+    
+    def forward(self):
+        try:
+            board = self.buddy.trello_board 
+            lines = []
+            for lst in board.all_lists():
+                cards = lst.list_cards(card_filter='open')
+                incomplete = [c for c in cards if not c.is_due_complete]
+                
+                for card in incomplete:
+                    lines.append(f"ID: {card.id} | Nome: {card.name}")
+            
+            return "\n".join(lines) if lines else "Nenhum card pendente encontrado."
+        except Exception as e:
+            return f"Erro ao listar cards: {str(e)}"
+
+class TrelloGetCardDescription(Tool):
+    name = "trello_get_card_description"
+    description = "Retorna a descrição detalhada de um card específico do Trello baseado no seu ID."
+    inputs = {
+        "card_id": {
+            "type": "string",
+            "description": "O ID único do card que você deseja ler a descrição."
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, buddy):
+        super().__init__()
+        self.buddy = buddy
+
+    def forward(self, card_id: str) -> str:
+        try:
+            card = self.buddy.trello_client.get_card(card_id)
+            if card and card.description:
+                return f"Descrição do Card '{card.name}':\n{card.description}"
+            return f"O card '{card.name}' não possui nenhuma descrição informada."
+        except Exception as e:
+            return f"Erro ao buscar detalhes do card {card_id}: {str(e)}"
+    
+class TrelloTaskLauncher(Tool):
+    name = "task_launcher"
+    description = "Ferramenta utilizada para abrir arquivos e páginas web relativas ao desenvolvimento de alguma tarefa no trello. Abre uma lista de alvos (URLs, caminhos de arquivos ou prefixos 'VSCODE:caminho' / 'INTELLIJ:caminho') no computador. Esses alvos vêm diretamente da descrição do card."
+    inputs = {
+        "targets": {
+            "type": "array",
+            "description": "Lista de strings com caminhos, comandos ou URLs para abrir de uma vez."
+        }
+    }
+    output_type = "string"
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, targets: list) -> str:
+        opened = []
+        for item in targets:
+            item = item.strip()
+            if item.upper().startswith("VSCODE:"):
+                path = item[7:].strip()
+                subprocess.Popen(f'code "{path}"', shell=True)
+                opened.append(f"VS Code ({path})")
+            elif item.upper().startswith("INTELLIJ:"):
+                path = item[9:].strip()
+                subprocess.Popen(f'idea "{path}"', shell=True)
+                opened.append(f"IntelliJ ({path})")
+            elif item.startswith("http://") or item.startswith("https://"):
+                webbrowser.open(item)
+                opened.append(item)
+            elif os.path.exists(item):
+                os.startfile(item)
+                opened.append(item)
+            else:
+                subprocess.Popen(item, shell=True)
+                opened.append(f"Comando: {item}")
+        return f"Sucesso ao abrir os seguintes alvos: {', '.join(opened)}"
