@@ -1,30 +1,42 @@
 from src.StateManager import BuddyStateManager, RoutineState, AudioState, UIState
+from src.DesktopAgent import DesktopAgent
 import threading
 import time
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
 import queue
 import json
 import os
 from trello import TrelloClient
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
 
-def load_sprites_config():
+
+def load_config():
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    path_config = os.path.join(current_dir, "..", "sprites.json")
-    if os.path.exists(path_config):
-        with open(path_config, "r", encoding="utf-8") as f:
-            return json.load(f)
-    else:
-        print("Erro: arquivo sprites.json não encontrado!")
-        return {}
+    path = os.path.join(current_dir, "..", "config.json")
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Arquivo de configuração não encontrado: {path}")
+
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 class DesktopBuddy:
     def __init__(self):
         # State engine and basic configs
+        self.config = load_config()
         self.state_manager = BuddyStateManager()
-        self.SPRITES = load_sprites_config()
+        self.SPRITES = self.config["sprites"]
         self.agent = None  
         self.sprite_queue = queue.Queue()
+
+        self.spotify_client = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        client_id=os.getenv('SPOTIPY_CLIENT_ID'),
+        client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
+        redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
+        scope='user-modify-playback-state, user-read-playback-state'
+    ))
 
         self.trello_client = TrelloClient(
         api_key=os.getenv('TRELLO_API_KEY'),
@@ -51,8 +63,8 @@ class DesktopBuddy:
         self.window.overrideredirect(True)  
         self.window.attributes("-topmost", True)  
 
-        self.window_width = 230
-        self.window_height = 230
+        self.window_width = self.config["ui"]["window_width"]
+        self.window_height = self.config["ui"]["window_height"]
         
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
@@ -105,6 +117,7 @@ class DesktopBuddy:
         self.command_entry.bind("<Return>", lambda event: self.send_command(self.command_entry.get()))
 
     def _init_working_attributes(self):
+        self.is_pomodoro_active = False
         self.work_thread_active = False
         self.pomodoro_loops = 0
         self.work_duration = 0
@@ -269,7 +282,7 @@ class DesktopBuddy:
     
     def process_ai_response(self, command: str):
         try:
-            resposta = self.agent.run(command)
+            resposta = self.agent.process_user_message(command)
             print(f"\n[AI Response]: {resposta}")
 
         except Exception as e:
@@ -328,7 +341,9 @@ class DesktopBuddy:
         loops_passed = 1
         last_action = None
 
-        self.send_command("Toque essa playlist 'https://open.spotify.com/playlist/59OrkYvGv0oM1KgPABU7nw'")
+        playlist = self.config["spotify"]["default_work_playlist"]
+
+        self.window.after(0,lambda: self.agent.process_system_event("work_started", playlist=playlist))
 
         while self.work_thread_active:
             time.sleep(1)
@@ -336,9 +351,10 @@ class DesktopBuddy:
 
             if (seconds_counter >= next_check and (self.pomodoro_loops == 0 or (self.pomodoro_loops != 0 and self.state_manager.routine_state == RoutineState.WORKING))):
                 next_check += check_interval
-                self.send_command("Analise a janela que está ativa no momento. Verifique o conteúdo da janela e avise o usuário caso essa janela não pareça útil para trabalho ou estudos. Mostre uma mensagem para o usuário utilizando a ferramenta 'work_mode_manager' apenas se a janela ativa não parecer útil e peça para que ele volte ao trabalho. Caso a janela ativa pareça útil de alguma forma, não é necessário mostrar nada.")
 
-            if self.pomodoro_loops == 0:
+                self.agent.evaluate_productivity()
+
+            if not self.is_pomodoro_active:
                 continue
 
             if (self.pomodoro_loops >= loops_passed):
@@ -346,7 +362,7 @@ class DesktopBuddy:
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * (loops_passed - 1)
                     
                     if last_action != "play":
-                        self.send_command("Volte a tocar a música")
+                        self.agent.process_system_event("resume_music")
                         last_action = "play"
 
                     if (seconds_counter >= current_time_limit):
@@ -357,7 +373,7 @@ class DesktopBuddy:
                     current_time_limit = self.work_duration * loops_passed + self.break_duration * loops_passed
 
                     if last_action != "stop":
-                        self.send_command("Caso a música esteja tocando no spotify no momento, pause a música")
+                        self.agent.process_system_event("pause_music")
                         last_action = "pause"
 
                     if (seconds_counter >= current_time_limit):
@@ -380,6 +396,7 @@ class DesktopBuddy:
 
     def stop_work_mode(self):
         self._init_working_attributes() #Makes thread loop stop
+        self.is_pomodoro_active = False
         self.state_manager.routine_state = RoutineState.IDLE
         self.update_sprite_visual()
     

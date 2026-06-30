@@ -2,6 +2,7 @@
 from asyncio import subprocess
 from smolagents import tool
 import os
+import re
 from time import sleep
 from dotenv import load_dotenv
 from smolagents import Tool
@@ -18,9 +19,15 @@ load_dotenv()
 
 class AnalyseActiveWindow(Tool):
     name = "analyse_active_window"
-    description = """Captura o título da janela que está ativa na tela do usuário e retorna seu título. Esta ferramenta NÃO aceita nenhum argumento ou parâmetro. Chame com arguments {}. 
-    Returns:
-        str | None: O título da janela ativa ou None se nenhuma janela ativa for encontrada."""
+    description = """Obtém o título da janela atualmente em foco no computador do usuário.
+    Use esta ferramenta somente quando precisar saber qual aplicação ou documento o usuário está utilizando.
+    Não utilize esta ferramenta para adivinhar atividades do usuário.
+    Entrada obrigatória: {}.
+    
+    Exemplos:
+    - "O que estou fazendo?"
+    - "Analise minha janela atual."
+    - "Qual programa está aberto?"""
     inputs = {}
     output_type = "string"
 
@@ -37,7 +44,16 @@ class AnalyseActiveWindow(Tool):
 
 class ShowMessage(Tool):
     name = "show_message"
-    description = "Exibe na tela alguma mensagem para o usuário. Use isso sempre que precisar comunicar algo para o usuário."
+    description = """Exibe uma mensagem textual ao usuário. Utilize esta ferramenta apenas quando for realmente necessário enviar uma mensagem.
+
+    Exemplos:
+    - responder perguntas;
+    - solicitar informações;
+    - informar erros;
+    - emitir avisos;
+    - fornecer orientações.
+
+    Não utilize esta ferramenta apenas para confirmar que outra ferramenta foi executada. Se outra ferramenta já apresentou a informação ao usuário (por exemplo, abriu um painel, uma janela ou uma interface), não utilize show_message."""
     inputs = {"message":{"type": "string", "description": "Mensagem a ser passada para o usuário."}}
     output_type = "null"
 
@@ -52,43 +68,7 @@ class ShowMessage(Tool):
         self.buddy.window.after(0, lambda: self.buddy.display_agent_message(message))
         self.buddy.sprite_queue.put(UIState.SHOWING)
         
-        return "Success: Message displayed to the user."
-
-@tool
-def list_processes() -> list[str]:
-    """
-    Lista os processos em execução no sistema,
-    para que possa tomar a decisão de quais processos
-    poderiam ser desconectados.
-    """
-    processes = []
-    seen_names = set()
-    for proc in psutil.process_iter(['pid', 'name']):
-        if proc.info['name'] not in seen_names:
-            seen_names.add(proc.info['name'])
-            processes.append(f"{proc.info['pid']}: {proc.info['name']}")
-    return processes
-
-@tool
-def kill_process(pid: int) -> bool:
-    """
-    Deve sempre ser solicitada a confirmação do usuário antes de chamar esta função.
-    Mata um processo com base no seu PID.
-    Args:
-        pid (int): O ID do processo a ser morto.
-    Returns:
-        bool: True se o processo foi morto com sucesso, False caso contrário.
-    """
-    import psutil
-    try:
-        proc = psutil.Process(pid)
-        proc.terminate()
-        proc.wait(timeout=3)
-        print(f"Process {pid} terminated successfully.")
-        return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired) as e:
-        print(f"Failed to terminate process {pid}: {e}")
-        return False
+        return "done"
 
 class PlaySpotify(Tool):
     name = "play_spotify_playlist_or_track"
@@ -109,13 +89,7 @@ class PlaySpotify(Tool):
         
         subprocess.Popen(['spotify'])
 
-        # Spotify auth config
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-            client_id=os.getenv('SPOTIPY_CLIENT_ID'),
-            client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
-            redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
-            scope='user-modify-playback-state, user-read-playback-state'
-        ))
+        sp = self.buddy.spotify_client
 
         tries = 0
         device_id = None
@@ -200,7 +174,7 @@ class PauseSpotify(Tool):
         self.buddy = buddy
 
     def forward(self) -> str:
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
+        sp = self.buddy.spotify_client
         try:
             sp.pause_playback()
             self.buddy.sprite_queue.put(AudioState.SILENT)
@@ -222,7 +196,7 @@ class ResumeSpotify(Tool):
         self.buddy = buddy
 
     def forward(self) -> str:
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv('SPOTIPY_CLIENT_ID'), client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'), redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'), scope='user-modify-playback-state, user-read-playback-state'))
+        sp = self.buddy.spotify_client
         try:
             sp.start_playback()
             self.buddy.sprite_queue.put(AudioState.MUSIC)
@@ -236,20 +210,22 @@ class ResumeSpotify(Tool):
         
 class VerifySpotify(Tool):
     name = "verify_spotify"
-    description = "Verifica se existe alguma música tocando no Spotify no momento. Retorna 0 se nenhuma música está tocando e 1 caso alguma música esteja tocando. Retorna None se o spotify estiver inativo."
+    description = """Verifica o estado atual do Spotify.
+    Retorna:
+    1 → reproduzindo
+    0 → pausado
+    -1 → Spotify indisponível ou fechado
+
+    Utilize esta ferramenta somente quando precisar decidir entre pausar, retomar ou iniciar uma reprodução."""
     inputs = {}
     output_type = "integer"
 
-    def __init__(self):
+    def __init__(self, buddy: DesktopBuddy):
         super().__init__()
+        self.buddy = buddy
 
     def forward(self) -> int:
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-            client_id=os.getenv('SPOTIPY_CLIENT_ID'),
-            client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
-            redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
-            scope='user-read-playback-state'
-        ))
+        sp = self.buddy.spotify_client
 
         try:
             playback = sp.current_playback()
@@ -266,13 +242,24 @@ class VerifySpotify(Tool):
 
 class WorkModeManager(Tool):
     name = "work_mode_manager"
-    description = """
-    Muda o estado de rotina do Buddy para WORKING ou volta para o modo IDLE. Para iniciar essa ferramenta sem o uso do pomodoro, passe os parâmetros "pomodoro_work_time", "pomodoro_break_time" e "pomodoro_loops" como 0.
-    Args:
-        id_state (int): Envie 1 para ativar o modo de trabalho (WORKING) ou 0 para desativar (IDLE).
-        pomodoro_work_time (int): Tempo de trabalho do pomodoro em segundos.
-        pomodoro_break_time (int): Tempo de intervalo do pomodoro em segundos.
-        pomodoro_loops (int): Quantidade de ciclos completos. Envie 0 para modo de foco infinito.
+    description = """Ativa ou desativa o modo de trabalho do Buddy.
+    Use esta ferramenta quando o usuário quiser:
+    - começar a trabalhar
+    - entrar em modo de foco
+    - ativar modo de trabalho
+    - iniciar um pomodoro
+    - encerrar o modo de trabalho
+
+    NÃO utilize esta ferramenta para abrir tarefas do Trello.
+
+    Se o usuário NÃO mencionar pomodoro, utilize:
+
+    id_state = 1
+    pomodoro_work_time = 0
+    pomodoro_break_time = 0
+    pomodoro_loops = 0
+
+    Somente pergunte sobre tempos do pomodoro quando o usuário demonstrar intenção explícita de utilizar essa técnica.
     """
     inputs = {
         "id_state": {"type": "integer", "description": "Identificação do estado. 0 para IDLE, 1 para WORKING."},
@@ -307,7 +294,7 @@ class WorkModeManager(Tool):
             
 class TrelloTaskViewer(Tool):
     name = "trello_task_viewer"
-    description = "OBRIGATÓRIO usar esta ferramenta se o usuário pedir para mostrar, abrir ou ver o painel/interface de atividades/tasks do Trello. Ela aceita uma mensagem de introdução opcional."
+    description = """Abre o painel visual das tarefas do Trello. Esta ferramenta já apresenta a interface ao usuário. Depois de utilizá-la normalmente nenhuma outra ferramenta precisa ser chamada. Não utilize show_message após esta ferramenta apenas para informar que o painel foi aberto."""
     inputs = {
         "message": {
             "type": "string",
@@ -323,11 +310,19 @@ class TrelloTaskViewer(Tool):
     
     def forward(self, message="Aqui estão suas atividades pendentes:"):
         self.buddy.window.after(0, lambda: self.buddy.open_trello_dashboard(message))
-        return "Painel do Trello aberto com a mensagem do agente."
+        return "done"
     
 class TrelloCardList(Tool):
     name = "trello_card_list"
-    description = "OBRIGATÓRIO usar esta ferramenta primeiro se o usuário pedir para abrir, preparar ou trabalhar em qualquer task. Retorna uma lista contendo o Nome e o ID de todos os cards de tarefas pendentes no Trello."
+    description = """Lista todos os cards pendentes do Trello e retorna seus nomes e respectivos IDs.Utilize esta ferramenta quando precisar descobrir qual card corresponde à tarefa que o usuário deseja abrir. Sempre obtenha o ID por meio desta ferramenta. Nunca invente IDs de cards.
+
+    Exemplos:
+    - "vamos trabalhar na tarefa"
+    - "abra minha tarefa"
+    - "continuar projeto"
+    - "preparar tarefa"
+
+    """
     inputs = {}
     output_type = "string"
 
@@ -349,10 +344,97 @@ class TrelloCardList(Tool):
             return "\n".join(lines) if lines else "Nenhum card pendente encontrado."
         except Exception as e:
             return f"Erro ao listar cards: {str(e)}"
+    
+class TrelloTaskLauncher(Tool):
+    name = "task_launcher"
+    description = """Abre automaticamente todos os recursos associados a um card do Trello.
+    A descrição do card pode conter:
+    - URLs
+    - pastas
+    - arquivos
+    - projetos do VS Code
+    - projetos do IntelliJ
+    - comandos
+    Forneça apenas o ID do card. Nunca invente um ID. Sempre utilize um ID obtido anteriormente pelo trello_card_list. Use esta ferramenta somente quando o usuário realmente desejar abrir ou preparar uma tarefa."""
+    inputs = {
+        "card_id": {
+            "type": "string",
+            "description": "O ID único do card que você deseja ler a descrição."
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, buddy):
+        super().__init__()
+        self.buddy = buddy
+
+    def forward(self, card_id: str) -> str:
+        try:
+            card = self.buddy.trello_client.get_card(card_id)
+            
+            if not card:
+                return f"Card com ID {card_id} não foi encontrado no Trello."
+                
+            if card.description:
+                opened = []
+                
+                for item in card.description.splitlines():
+                    item = item.strip()
+                    
+                    if not item:
+                        continue
+
+                    if item.startswith("-"):
+                        item = item[1:].strip()
+
+                    url_match = re.search(r'https?://[^\s\)"]+', item)
+
+                    if url_match:
+                        print("url_match")
+                        url = url_match.group(0)
+                        webbrowser.open(url)
+                        opened.append(url)
+                        continue
+                        
+                    elif item.upper().startswith("VSCODE:"):
+                        path = item[7:].strip()
+                        subprocess.Popen(f'code "{path}"', shell=True)
+                        opened.append(f"VS Code ({path})")
+                        
+                    elif item.upper().startswith("INTELLIJ:"):
+                        path = item[9:].strip()
+                        subprocess.Popen(f'idea "{path}"', shell=True)
+                        opened.append(f"IntelliJ ({path})")
+                        
+                    elif item.startswith("http://") or item.startswith("https://"):
+                        print("webbrowser")
+                        webbrowser.open(item)
+                        opened.append(item)
+
+                    elif item.upper().startswith("CMD:"):
+                        cmd = item[4:].strip()
+                        subprocess.Popen(cmd, shell=True)
+                        
+                    elif os.path.exists(item):
+                        if hasattr(os, 'startfile'):
+                            os.startfile(item)
+                
+                if not opened:
+                    return f"A descrição do card '{card.name}' foi lida, mas nenhum alvo válido foi encontrado."
+                    
+                return f"Sucesso ao abrir os seguintes alvos do card '{card.name}': {', '.join(opened)}"
+                
+            return f"O card '{card.name}' não possui nenhuma descrição informada."
+            
+        except Exception as e:
+            return f"Erro ao buscar detalhes do card {card_id}: {str(e)}"
+        
 
 class TrelloGetCardDescription(Tool):
     name = "trello_get_card_description"
-    description = "Retorna a descrição detalhada de um card específico do Trello baseado no seu ID."
+    description = """
+    Obtém a descrição completa de um card do Trello utilizando seu ID. Utilize esta ferramenta quando precisar ler o conteúdo de um card antes de decidir a próxima ação. Não invente IDs. O ID deve vir do trello_card_list.
+    """
     inputs = {
         "card_id": {
             "type": "string",
@@ -373,40 +455,47 @@ class TrelloGetCardDescription(Tool):
             return f"O card '{card.name}' não possui nenhuma descrição informada."
         except Exception as e:
             return f"Erro ao buscar detalhes do card {card_id}: {str(e)}"
-    
-class TrelloTaskLauncher(Tool):
-    name = "task_launcher"
-    description = "Ferramenta utilizada para abrir arquivos e páginas web relativas ao desenvolvimento de alguma tarefa no trello. Abre uma lista de alvos (URLs, caminhos de arquivos ou prefixos 'VSCODE:caminho' / 'INTELLIJ:caminho') no computador. Esses alvos vêm diretamente da descrição do card."
-    inputs = {
-        "targets": {
-            "type": "array",
-            "description": "Lista de strings com caminhos, comandos ou URLs para abrir de uma vez."
-        }
-    }
-    output_type = "string"
+        
 
-    def __init__(self):
-        super().__init__()
+@tool
+def list_processes() -> list[str]:
+    """
+    Lista todos os processos atualmente em execução. Utilize esta ferramenta apenas quando precisar descobrir o PID de algum programa. Não utilize esta ferramenta se o usuário já informou o PID.
 
-    def forward(self, targets: list) -> str:
-        opened = []
-        for item in targets:
-            item = item.strip()
-            if item.upper().startswith("VSCODE:"):
-                path = item[7:].strip()
-                subprocess.Popen(f'code "{path}"', shell=True)
-                opened.append(f"VS Code ({path})")
-            elif item.upper().startswith("INTELLIJ:"):
-                path = item[9:].strip()
-                subprocess.Popen(f'idea "{path}"', shell=True)
-                opened.append(f"IntelliJ ({path})")
-            elif item.startswith("http://") or item.startswith("https://"):
-                webbrowser.open(item)
-                opened.append(item)
-            elif os.path.exists(item):
-                os.startfile(item)
-                opened.append(item)
-            else:
-                subprocess.Popen(item, shell=True)
-                opened.append(f"Comando: {item}")
-        return f"Sucesso ao abrir os seguintes alvos: {', '.join(opened)}"
+    Returns:
+        Lista dos processos abertos no momento.
+    """
+    processes = []
+    seen_names = set()
+    for proc in psutil.process_iter(['pid', 'name']):
+        if proc.info['name'] not in seen_names:
+            seen_names.add(proc.info['name'])
+            processes.append(f"{proc.info['pid']}: {proc.info['name']}")
+    return processes
+
+@tool
+def kill_process(pid: int) -> bool:
+    """
+    Encerra um processo do sistema.
+
+    PERIGOSO. Antes de utilizar esta ferramenta você DEVE confirmar
+    explicitamente com o usuário. Nunca encerre processos sem confirmação.
+
+    Args:
+        pid: PID do processo a ser encerrado. Deve ser obtido pela ferramenta
+            list_processes ou informado explicitamente pelo usuário.
+
+    Returns:
+        True se o processo foi encerrado com sucesso, False caso contrário.
+    """
+
+    try:
+        proc = psutil.Process(pid)
+        proc.terminate()
+        proc.wait(timeout=3)
+        print(f"Process {pid} terminated successfully.")
+        return True
+
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired) as e:
+        print(f"Failed to terminate process {pid}: {e}")
+        return False
