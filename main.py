@@ -14,10 +14,6 @@ from src.DesktopAgent import DesktopAgent
 from src.utils import start_ollama, start_spotify_silent
 from src.tools import ResumeSpotify, PauseSpotify, AnalyseActiveWindow, WorkModeManager, PlaySpotify, ShowMessage, VerifySpotify, TrelloCardList, TrelloGetCardDescription, TrelloTaskViewer, TrelloTaskLauncher
 
-import litellm
-
-litellm._turn_on_debug()
-
 if __name__ == "__main__":
     start_ollama()
     start_spotify_silent()
@@ -38,7 +34,7 @@ if __name__ == "__main__":
 
     tools = [PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), WorkModeManager(buddy_instance), TrelloTaskViewer(buddy_instance), VerifySpotify(buddy_instance), TrelloTaskLauncher(buddy_instance), TrelloCardList(buddy_instance), TrelloGetCardDescription(buddy_instance)]
 
-    agent = DesktopAgent(api_model, tools)
+    agent = DesktopAgent(local_model, tools)
 
     buddy_instance.agent = agent
 

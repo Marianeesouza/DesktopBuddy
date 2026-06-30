@@ -64,11 +64,10 @@ class ShowMessage(Tool):
     def forward(self, message: str) -> None:
         print(f"[Tool ShowMessage]: Exibindo mensagem -> {message}")
         
-        # Dispara a renderização na thread principal com segurança
         self.buddy.window.after(0, lambda: self.buddy.display_agent_message(message))
         self.buddy.sprite_queue.put(UIState.SHOWING)
         
-        return "done"
+        return "Mensagem apresentada com sucesso"
 
 class PlaySpotify(Tool):
     name = "play_spotify_playlist_or_track"
@@ -310,7 +309,7 @@ class TrelloTaskViewer(Tool):
     
     def forward(self, message="Aqui estão suas atividades pendentes:"):
         self.buddy.window.after(0, lambda: self.buddy.open_trello_dashboard(message))
-        return "done"
+        return "Quadro apresentado com sucesso. Tarefa encerrada."
     
 class TrelloCardList(Tool):
     name = "trello_card_list"
@@ -387,7 +386,7 @@ class TrelloTaskLauncher(Tool):
                     if item.startswith("-"):
                         item = item[1:].strip()
 
-                    url_match = re.search(r'https?://[^\s\)"]+', item)
+                    url_match = re.search(r'https?://[^\s\)\]"]+', item)
 
                     if url_match:
                         print("url_match")
@@ -398,11 +397,18 @@ class TrelloTaskLauncher(Tool):
                         
                     elif item.upper().startswith("VSCODE:"):
                         path = item[7:].strip()
+                        if path.startswith("~"):
+                            user_home = os.environ['USERPROFILE']
+                            path = path.replace("~", user_home)
+                            
                         subprocess.Popen(f'code "{path}"', shell=True)
                         opened.append(f"VS Code ({path})")
                         
                     elif item.upper().startswith("INTELLIJ:"):
                         path = item[9:].strip()
+                        if path.startswith("~"):
+                            user_home = os.environ['USERPROFILE']
+                            path = path.replace("~", user_home)
                         subprocess.Popen(f'idea "{path}"', shell=True)
                         opened.append(f"IntelliJ ({path})")
                         
