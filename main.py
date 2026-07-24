@@ -27,14 +27,14 @@ if __name__ == "__main__":
     )
 
     api_model = LiteLLMModel(
-        model_id="gemini/gemini-2.5-flash",
+        model_id="gemini/gemini-3.1-flash-lite",
         temperature=0.1,
         max_tokens=512
     )
 
     tools = [PlaySpotify(buddy_instance), PauseSpotify(buddy_instance), ResumeSpotify(buddy_instance), AnalyseActiveWindow(), ShowMessage(buddy_instance), WorkModeManager(buddy_instance), TrelloTaskViewer(buddy_instance), VerifySpotify(buddy_instance), TrelloTaskLauncher(buddy_instance), TrelloCardList(buddy_instance), TrelloGetCardDescription(buddy_instance)]
 
-    agent = DesktopAgent(local_model, tools)
+    agent = DesktopAgent(api_model, tools)
 
     buddy_instance.agent = agent
 

@@ -32,11 +32,11 @@ class DesktopBuddy:
         self.sprite_queue = queue.Queue()
 
         self.spotify_client = spotipy.Spotify(auth_manager=SpotifyOAuth(
-        client_id=os.getenv('SPOTIPY_CLIENT_ID'),
-        client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
-        redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
-        scope='user-modify-playback-state, user-read-playback-state'
-    ))
+            client_id=os.getenv('SPOTIPY_CLIENT_ID'),
+            client_secret=os.getenv('SPOTIPY_CLIENT_SECRET'),
+            redirect_uri=os.getenv('SPOTIPY_REDIRECT_URI'),
+            scope='user-modify-playback-state, user-read-playback-state'
+        ))
 
         self.trello_client = TrelloClient(
         api_key=os.getenv('TRELLO_API_KEY'),
@@ -60,8 +60,8 @@ class DesktopBuddy:
 
     def _init_window(self):
         self.window = tk.Tk()
-        self.window.overrideredirect(True)  
-        self.window.attributes("-topmost", True)  
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
 
         self.window_width = self.config["ui"]["window_width"]
         self.window_height = self.config["ui"]["window_height"]
@@ -77,28 +77,26 @@ class DesktopBuddy:
         self.window.attributes("-transparentcolor", self.transparency_color)
 
     def _init_widgets(self):
-
         self.current_frames = []
         self.current_frame_index = 0
 
         self.label = tk.Label(
             self.window,
-            fg="white",                  
-            bg=self.transparency_color,
-            font=("Arial", 16, "bold")
+            fg="white",
+            bg=self.transparency_color
         )
         self.label.pack(expand=True, fill="both")
 
         self.command_entry = tk.Entry(self.window, font=("Arial", 10))
 
         self.msg_label = tk.Label(
-            self.window, 
-            font=("Arial", 10, "italic"), 
-            bg="#f0f0f0",          
-            fg="#333333",          
-            bd=1,                  
-            relief="solid",        
-            wraplength=240,        
+            self.window,
+            font=("Arial", 10, "italic"),
+            bg="#f0f0f0",
+            fg="#333333",
+            bd=1,
+            relief="solid",
+            wraplength=240,
             justify="center"
         )
 
@@ -143,7 +141,7 @@ class DesktopBuddy:
             self.sprite_queue.task_done()
         except queue.Empty:
             pass
-            
+        
         self.window.after(100, self.check_sprite_queue)
 
     def _handle_queue_command(self, state_enum):

@@ -55,13 +55,13 @@ class ShowMessage(Tool):
 
     Não utilize esta ferramenta apenas para confirmar que outra ferramenta foi executada. Se outra ferramenta já apresentou a informação ao usuário (por exemplo, abriu um painel, uma janela ou uma interface), não utilize show_message."""
     inputs = {"message":{"type": "string", "description": "Mensagem a ser passada para o usuário."}}
-    output_type = "null"
+    output_type = "string"
 
     def __init__(self, buddy: DesktopBuddy):
         super().__init__()
         self.buddy = buddy
 
-    def forward(self, message: str) -> None:
+    def forward(self, message: str) -> str:
         print(f"[Tool ShowMessage]: Exibindo mensagem -> {message}")
         
         self.buddy.window.after(0, lambda: self.buddy.display_agent_message(message))

@@ -3,7 +3,6 @@ from smolagents import ToolCallingAgent
 from threading import Lock
 
 class DesktopAgent:
-
     def __init__(self, model, tools):
         self.agent = ToolCallingAgent(
             tools=tools,
